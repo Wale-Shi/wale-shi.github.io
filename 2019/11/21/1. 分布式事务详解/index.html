@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 4.0.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/font-awesome.min.css">
+
+
+<script id="hexo-configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    hostname: new URL('http://yoursite.com').hostname,
+    root: '/',
+    scheme: 'Muse',
+    version: '7.6.0',
+    exturl: false,
+    sidebar: {"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},
+    copycode: {"enable":false,"show_result":false,"style":null},
+    back2top: {"enable":true,"sidebar":false,"scrollpercent":false},
+    bookmark: {"enable":false,"color":"#222","save":"auto"},
+    fancybox: false,
+    mediumzoom: false,
+    lazyload: false,
+    pangu: false,
+    comments: {"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},
+    algolia: {
+      appID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    },
+    localsearch: {"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},
+    path: '',
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}
+  };
+</script>
+
+  <meta name="description" content="分布式事务详解一、两个基础理论1. CAP理论 CAP：   Consistency(一致性) Available（可用性） Partition tolerance（分区容错性）     2.BASE理论 BASE：   Basically Available(基本可用) Soft state(软状态) Eventually consistent (最终一致性)">
+<meta property="og:type" content="article">
+<meta property="og:title" content="分布式事务详解">
+<meta property="og:url" content="http:&#x2F;&#x2F;yoursite.com&#x2F;2019&#x2F;11&#x2F;21&#x2F;1.%20%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E8%AF%A6%E8%A7%A3&#x2F;index.html">
+<meta property="og:site_name" content="Wale&#39;s Blog">
+<meta property="og:description" content="分布式事务详解一、两个基础理论1. CAP理论 CAP：   Consistency(一致性) Available（可用性） Partition tolerance（分区容错性）     2.BASE理论 BASE：   Basically Available(基本可用) Soft state(软状态) Eventually consistent (最终一致性)">
+<meta property="og:locale" content="zh-CN">
+<meta property="og:image" content="https:&#x2F;&#x2F;walepic.oss-cn-hangzhou.aliyuncs.com&#x2F;%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1&#x2F;1PC.png">
+<meta property="og:image" content="https:&#x2F;&#x2F;walepic.oss-cn-hangzhou.aliyuncs.com&#x2F;%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1&#x2F;2PC.png">
+<meta property="og:image" content="https:&#x2F;&#x2F;walepic.oss-cn-hangzhou.aliyuncs.com&#x2F;%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1&#x2F;TCC.png">
+<meta property="og:image" content="https:&#x2F;&#x2F;walepic.oss-cn-hangzhou.aliyuncs.com&#x2F;%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1&#x2F;TCC%20from%20Internet.png">
+<meta property="og:updated_time" content="2019-12-27T15:48:38.688Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https:&#x2F;&#x2F;walepic.oss-cn-hangzhou.aliyuncs.com&#x2F;%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1&#x2F;1PC.png">
+
+<link rel="canonical" href="http://yoursite.com/2019/11/21/1.%20%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E8%AF%A6%E8%A7%A3/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome: false,
+    isPost: true
+  };
+</script>
+
+  <title>分布式事务详解 | Wale's Blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-meta">
+
+    <div>
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">Wale's Blog</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+  </div>
+
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+</div>
+
+
+<nav class="site-nav">
+  
+  <ul id="menu" class="menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-fw fa-home"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-fw fa-archive"></i>归档</a>
+
+  </li>
+  </ul>
+
+</nav>
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content">
+            
+
+  <div class="posts-expand">
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block " lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://yoursite.com/2019/11/21/1.%20%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E8%AF%A6%E8%A7%A3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Wale">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Wale's Blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          分布式事务详解
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-11-21 12:03:06" itemprop="dateCreated datePublished" datetime="2019-11-21T12:03:06+08:00">2019-11-21</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-calendar-check-o"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2019-12-27 23:48:38" itemprop="dateModified" datetime="2019-12-27T23:48:38+08:00">2019-12-27</time>
+              </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="分布式事务详解"><a href="#分布式事务详解" class="headerlink" title="分布式事务详解"></a>分布式事务详解</h1><h2 id="一、两个基础理论"><a href="#一、两个基础理论" class="headerlink" title="一、两个基础理论"></a>一、两个基础理论</h2><h3 id="1-CAP理论"><a href="#1-CAP理论" class="headerlink" title="1. CAP理论"></a>1. CAP理论</h3><ul>
+<li><p>CAP：</p>
+<blockquote>
+<ul>
+<li>Consistency(一致性)</li>
+<li>Available（可用性）</li>
+<li>Partition tolerance（分区容错性）</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<h3 id="2-BASE理论"><a href="#2-BASE理论" class="headerlink" title="2.BASE理论"></a>2.BASE理论</h3><ul>
+<li><p>BASE：</p>
+<blockquote>
+<ul>
+<li>Basically Available(基本可用)</li>
+<li>Soft state(软状态)</li>
+<li>Eventually consistent (最终一致性)</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<a id="more"></a>
+<h2 id="二、几种分布式事务"><a href="#二、几种分布式事务" class="headerlink" title="二、几种分布式事务"></a>二、几种分布式事务</h2><h3 id="1-XA-方案"><a href="#1-XA-方案" class="headerlink" title="1. XA 方案"></a>1. XA 方案</h3><p>​    XA 是 X/Open CAE Specification (Distributed Transaction Processing)模型，它定义的 TM（Transaction Manager）与 RM（Resource Manager）之间进行通信的接口。</p>
+<p>​    具体依赖于数据库厂商对jdbc-driver的实现。</p>
+<p>​    在 XA 规范中，数据库充当 RM 角色，应用需要充当 TM 的角色，即生成全局的 txId ，调用 XAResource 接口，把多个本地事务协调为全局统一的分布式事务。</p>
+<ul>
+<li><h4 id="一阶段提交（1PC）"><a href="#一阶段提交（1PC）" class="headerlink" title="一阶段提交（1PC）"></a>一阶段提交（1PC）</h4><p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/1PC.png" alt="1PC"></p>
+<p>1PC也叫弱XA。如上图，</p>
+<ul>
+<li>这种方式去掉了XA中的prepare阶段，来减少资源锁定范围，从而提升并发能力。</li>
+<li>弱 XA 相对性能损耗比较低，但在事务提交的执行过程中，若出现网络故障、数据库宕机等预期之外的异常，将会造成数据不一致，且无法进行回滚。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<ul>
+<li><h4 id="二阶段提交（2PC）"><a href="#二阶段提交（2PC）" class="headerlink" title="二阶段提交（2PC）"></a>二阶段提交（2PC）</h4><p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/2PC.png" alt="2PC"></p>
+<p>2PC也叫强XA，是XA的标准实现。分为两个阶段，如上图。</p>
+<ul>
+<li>第一个阶段：Prepare。TM要求每个涉及到事务的数据库预提交(precommit)此操作，并反映是否可以提交。</li>
+<li>第二阶段：TM要求每个数据库提交数据，或者回滚数据。</li>
+</ul>
+<p>开启XA事务之后，所有子事务会按照本地默认的隔离级别锁定资源。这时会记录数据库的undo和redo log。</p>
+<ul>
+<li><p>当所有子事务反馈的结果为 “yes” 时，TM 再发起 commit 。</p>
+</li>
+<li><p>若其中任何一个子事务反馈的结果为“no”，TM 则发起 rollback 。</p>
+</li>
+<li><p>如果在prepare阶段反馈“yes”，但是在commit阶段数据库宕机，可根据XA recover再次进行commit进行补偿，保证数据一致性。</p>
+</li>
+</ul>
+<p>优点：</p>
+<blockquote>
+<ul>
+<li>尽量保证了数据的强一致性，各个主流数据库都提供了相应的实现，实现成本相对低一些</li>
+</ul>
+</blockquote>
+<p>缺点：</p>
+<blockquote>
+<ul>
+<li>同步阻塞问题</li>
+<li>单点故障</li>
+<li>数据不一致</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<h3 id="2-TCC-方案"><a href="#2-TCC-方案" class="headerlink" title="2. TCC 方案"></a>2. TCC 方案</h3><p>TCC也算是一种2PC的方案，只不过实现过程放在了应用层。先来看看执行过程。</p>
+<p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/TCC.png" alt="image"></p>
+<ul>
+<li><p>Try</p>
+<ul>
+<li>尝试执行业务</li>
+<li>完成所有业务校验</li>
+<li>预留业务资源</li>
+</ul>
+</li>
+<li><p>Confirm </p>
+<ul>
+<li>确认执行业务；</li>
+<li>真正执行业务，不作任何业务检查</li>
+<li>只使用Try阶段预留的业务资源</li>
+<li>Confirm 操作满足幂等性</li>
+</ul>
+</li>
+<li><p>Cancel</p>
+<ul>
+<li>取消执行业务</li>
+<li>释放Try阶段预留的业务资源</li>
+<li>Cancel操作满足幂等性</li>
+</ul>
+</li>
+</ul>
+<p>举个栗子：拿一个<strong>用户提现</strong>的操作来讲</p>
+<blockquote>
+<ul>
+<li>Try阶段： <ol>
+<li>校验用户信息（账户状态），余额信息是否足够等</li>
+<li>扣减本地用户余额，这时候余额信息处于冻结状态（表示这部分余额信息被这笔提现操作占用，由于最后结果未知，不能完全扣减掉）</li>
+<li>调用银行服务，从用户账户转到提现账户。这也是一个跨库事务。</li>
+</ol>
+</li>
+<li>Confirm阶段：<ol>
+<li>核心系统返回了成功，那这时候需要把冻结部分的余额扣减掉。</li>
+<li>修改本地流水信息为成功</li>
+<li>修改本地明细信息为成功</li>
+</ol>
+</li>
+<li>Cancel阶段：<ol>
+<li>核心系统返回了失败，这时候需要冻结部分的余额回滚，重新加回原账户。</li>
+<li>修改本地流水信息为失败</li>
+<li>修改本地明细信息为失败</li>
+</ol>
+</li>
+</ul>
+</blockquote>
+<p> 当然这个只是一个简单的业务流程，里面核心系统不一定只会返回成功失败，还有一场情况，超时，返回处理中，等等。当考虑这部分的时候，还需要考虑业务的幂等性，像超时情况，调用方不知道实际的业务结果，可能会发起重试，不能让账户重复扣钱。</p>
+<p>再来一张来自网络的图</p>
+<p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/TCC%20from%20Internet.png" alt="image"></p>
+<p>所以总的来讲，TCC的优点</p>
+<ul>
+<li>可以保证事务的最终一致性。</li>
+<li>无需在发起阶段挂起事务，提高吞吐量。</li>
+</ul>
+<p>缺点也很明显：</p>
+<ul>
+<li>需要考虑的异常情况更多，保证业务幂等</li>
+<li>业务回滚的逻辑也要编写，开发工作量增加</li>
+</ul>
+<hr>
+<h3 id="3-基于消息实现的分布式事务"><a href="#3-基于消息实现的分布式事务" class="headerlink" title="3. 基于消息实现的分布式事务"></a>3. 基于消息实现的分布式事务</h3><p>这种方式实现起来是比较简单的，比较适合下游事务比较简单，不需要回滚的场景。比如：</p>
+<ul>
+<li>某笔订单成功后，为用户增加积分。不考虑退款情况，这种情况需要保证积分最终成功增加，不能多加也不能漏加，需要支持交易幂等。</li>
+</ul>
+<p>可以看到该事务形态过程简单，性能消耗小，发起方与跟随方之间的流量峰谷可以使用队列填平。</p>
+<hr>
+<h3 id="4-基于补偿实现的分布式事务"><a href="#4-基于补偿实现的分布式事务" class="headerlink" title="4. 基于补偿实现的分布式事务"></a>4. 基于补偿实现的分布式事务</h3><p>像3中事务形体并不适合所有场景，当服务异常需要回滚的时候，消息实现的方案就可能不是很适用了。<br>比如这种情况，<strong>某笔订单完成时，同时扣掉用户的现金</strong>。<br>涉及到资金的交易格外需要注意，比如我们的业务场景是这样的：</p>
+<ol>
+<li>创建订单数据，但暂不提交本地事务</li>
+<li>订单服务发送远程调用到现金服务，以扣除对应的金额</li>
+<li>上述步骤成功后提交订单库的事务</li>
+</ol>
+<p>在2-3部中间发生异常，程序需要回滚，2步骤已经提交，这咋办呢？需要一个额外的服务，来把之前扣掉的金额加回去。这个过程，就是补偿。</p>
+<p>那补偿有什么问题呢？可以想到，上面的现金服务不仅需要一个扣减服务，还要增加额外的回滚动作，开发工作量更多一些。相对消息的情况，也失去了削峰填谷的能力。</p>
+<p>也可以看到，无论消息还是补偿，实时性不是特别强，用户可能可以在订单未完成的情况下，看到不一致的视图。如，订单还未成功，钱先扣掉了。或者，订单完成了，积分还没加上。</p>
+<p>当然用哪种方案，还得看业务决定。</p>
+<h3 id="5-SAGA"><a href="#5-SAGA" class="headerlink" title="5. SAGA"></a>5. SAGA</h3><p>暂时没有很好的总结，可以参考<a href="https://www.jdon.com/49338" target="_blank" rel="noopener">：分布式事务Saga模式</a></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+      </footer>
+    
+  </article>
+  
+  
+  
+
+  </div>
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let activeClass = CONFIG.comments.activeClass;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#分布式事务详解"><span class="nav-number">1.</span> <span class="nav-text">分布式事务详解</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#一、两个基础理论"><span class="nav-number">1.1.</span> <span class="nav-text">一、两个基础理论</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-CAP理论"><span class="nav-number">1.1.1.</span> <span class="nav-text">1. CAP理论</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-BASE理论"><span class="nav-number">1.1.2.</span> <span class="nav-text">2.BASE理论</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#二、几种分布式事务"><span class="nav-number">1.2.</span> <span class="nav-text">二、几种分布式事务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-XA-方案"><span class="nav-number">1.2.1.</span> <span class="nav-text">1. XA 方案</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#一阶段提交（1PC）"><span class="nav-number">1.2.1.1.</span> <span class="nav-text">一阶段提交（1PC）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#二阶段提交（2PC）"><span class="nav-number">1.2.1.2.</span> <span class="nav-text">二阶段提交（2PC）</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-TCC-方案"><span class="nav-number">1.2.2.</span> <span class="nav-text">2. TCC 方案</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-基于消息实现的分布式事务"><span class="nav-number">1.2.3.</span> <span class="nav-text">3. 基于消息实现的分布式事务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#4-基于补偿实现的分布式事务"><span class="nav-number">1.2.4.</span> <span class="nav-text">4. 基于补偿实现的分布式事务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#5-SAGA"><span class="nav-number">1.2.5.</span> <span class="nav-text">5. SAGA</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Wale</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">1</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2019</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Wale</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> 强力驱动 v4.0.0
+  </div>
+  <span class="post-meta-divider">|</span>
+  <div class="theme-info">主题 – <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> v7.6.0
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+<script src="/js/utils.js"></script><script src="/js/motion.js"></script>
+<script src="/js/schemes/muse.js"></script>
+<script src="/js/next-boot.js"></script>
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
