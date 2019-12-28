@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>AbstractQueuedSynchronizer源码分析</title>
+    <url>/2019/12/28/2.%20AbstractQueuedSynchronizer%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/</url>
+    <content><![CDATA[<h2 id="AbstractQueuedSynchronizer源码分析"><a href="#AbstractQueuedSynchronizer源码分析" class="headerlink" title="AbstractQueuedSynchronizer源码分析"></a>AbstractQueuedSynchronizer源码分析</h2><h3 id="1-什么是AQS？"><a href="#1-什么是AQS？" class="headerlink" title="1. 什么是AQS？"></a>1. 什么是AQS？</h3><blockquote>
+<p>全名AbstractQueuedSynchronizer，字面意思，抽象队列同步器。三个关键词，抽象：提供一些模板方法；队列：符合FIFO的特性；同步器：用于提供同步的组件。</p>
+</blockquote>
+<h3 id="2-有什么用？"><a href="#2-有什么用？" class="headerlink" title="2. 有什么用？"></a>2. 有什么用？</h3><blockquote>
+<p>是一个模版类，为一些juc（java.utils.concurrent）包下的一些并发工具类提供一些公共方法。</p>
+</blockquote>
+<a id="more"></a>
+<h3 id="3-哪些类用到了它？"><a href="#3-哪些类用到了它？" class="headerlink" title="3. 哪些类用到了它？"></a>3. 哪些类用到了它？</h3><p>先看下有哪些类实现了它，如截图所示：<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/%E5%AE%9E%E7%8E%B0AQS%E7%9A%84%E7%B1%BB.png" alt="image"></p>
+<blockquote>
+<p>可以看到常用的ReentrantLock可重入锁/ReentrantReadWriteLock可重入读写锁，信号同步工具CountDownLatch/Semaphore等都是通过内部类继承AQS来实现的。</p>
+</blockquote>
+<p>再来看看它有哪些成员变量：<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/AQS%E6%88%90%E5%91%98%E5%B1%9E%E6%80%A7.png" alt="image"></p>
+<p>可以看到主要是三个重要的属性：</p>
+<ul>
+<li>head：Node类型的头节点指针，用来引用等待队列的头节点</li>
+<li>tail：Node类型的尾节点指针，用来引用等待队列的尾节点</li>
+<li>state：同步器的状态码</li>
+</ul>
+<blockquote>
+<p>需要注意这三个成员属性都是用volatile修饰的。保证多线程执行时都能即时看到三个属性的变化。</p>
+</blockquote>
+<p>再来看看Node类的内部结构<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/AQS%20Node%E5%86%85%E9%83%A8%E7%BB%93%E6%9E%84.png" alt="image"></p>
+<p>常量：</p>
+<ul>
+<li>SHARED：用来表示这个节点是在共享模式下的等待节点</li>
+<li>EXCLUSIVE:用来表示这个节点是在排他模式下的等待节点</li>
+<li>CANCELED:值为1，由于同步队列中等待的用来表示线程被取消了</li>
+<li>SIGNAL:值为-1，后继节点的线程处于等待状态，而当前节点的线程如果释放了同步状态或被取消，则会通知后继节点，使后继节点的线程得以运行；</li>
+<li>CONDITION:值为-2，用来表示线程等待在condition上，当其他线程对Condition调用了signal()后，该节点会从等待队列转移到同步队列中，加入到对同步状态的获取中；</li>
+<li>PROPAGETE:值为-3，表示下一次共享式同步状态获取将会无条件地传播下去</li>
+</ul>
+<p>属性：</p>
+<ul>
+<li>waitStatus:当前线程处于哪个状态。为上面四个常量值的其中一个。</li>
+<li>prev:前驱节点</li>
+<li>next:后继节点</li>
+<li>thread:获取同步状态的线程。</li>
+<li>nextWaiter:等待队列的后继节点。如果当前节点是共享的，那么这个字段将是SHARED常量，也就是说节点类型（共享和独占）和等待队列中的后继节点公用一个字段。</li>
+</ul>
+<p>结构大概是这个样子的：<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/AQS.png" alt="image"></p>
+<ul>
+<li>在新增节点的时候，会调用compareAndSetTail方法，利用CAS来设置尾节点。</li>
+<li>头节点是成功获取同步状态的节点，头节点释放同步状态后，会唤醒后继节点，后继节点成功获取同步状态后，将自己设置成头节点。</li>
+<li>设置头节点是通过获取同步状态成功的线程来完成的，由于只有一个节点能够成功获取到同步状态，因此设置头节点的过程不需要CAS来保证。</li>
+</ul>
+<h3 id="4-有哪些方法？"><a href="#4-有哪些方法？" class="headerlink" title="4. 有哪些方法？"></a>4. 有哪些方法？</h3><p>来看看主要有哪些方法：<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/AQS%E6%96%B9%E6%B3%95.png" alt="image"></p>
+<ul>
+<li>acquire</li>
+<li>acquireInterruptibly</li>
+<li>tryAcquireNanos</li>
+<li>release</li>
+<li>acquireShared</li>
+<li>acquireSharedInterruptibly</li>
+<li>tryAcquireSharedNanos</li>
+<li>releaseShared</li>
+<li>hasQueuedThreads</li>
+<li>hasContended</li>
+<li>isQueued</li>
+<li>hasQueuedPredecessors</li>
+<li>owns</li>
+<li>hasWaiters</li>
+<li>getWaitQueueLength</li>
+<li>getWaitingThreads<br>这么看肯定会一脸懵，都是些啥 - -。<br>结合例子来看：ReentrantLock中的实现：<br><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/java/ReentrantLock%E4%B8%AD%E7%9A%84Fair%E7%9A%84Lock%E6%96%B9%E6%B3%95.png" alt="image"><blockquote>
+<p>在公平锁的实现中，仅仅用来一行代码，那来看看acquire都做了些什么。</p>
+</blockquote>
+</li>
+</ul>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">public final void acquire(int arg) &#123;</span><br><span class="line">    if (!tryAcquire(arg) &amp;&amp;</span><br><span class="line">        acquireQueued(addWaiter(Node.EXCLUSIVE), arg))</span><br><span class="line">        selfInterrupt();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>这里主要分别执行了三个方法，第一个 tryAcquire(),AQS中的默认实现是抛出了异常，说明子类如果要用这个acquire方法，必须自己实现其逻辑，再回去看看ReentrantLock的实现</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">protected boolean tryAcquire(int arg) &#123;</span><br><span class="line">    throw new UnsupportedOperationException();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>ReentrantLock中的tryAcquire()方法：</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">protected final boolean tryAcquire(int acquires) &#123;</span><br><span class="line">    // 当前线程的引用</span><br><span class="line">    final Thread current = Thread.currentThread();</span><br><span class="line">    int c = getState();</span><br><span class="line">    // 同步状态</span><br><span class="line">    if (c == 0) &#123;</span><br><span class="line">        if (!hasQueuedPredecessors() &amp;&amp; // 是否为队列中的头节点</span><br><span class="line">            compareAndSetState(0, acquires)) &#123;//CAS设置同步状态</span><br><span class="line">            // 设置独占线程为当前线程</span><br><span class="line">            setExclusiveOwnerThread(current);</span><br><span class="line">            // 返回true表示线程成功获取到了同步状态</span><br><span class="line">            return true;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    // 如果当前线程正好为独占线程，可重入</span><br><span class="line">    else if (current == getExclusiveOwnerThread()) &#123;</span><br><span class="line">        // 加上获取的同步量</span><br><span class="line">        int nextc = c + acquires;</span><br><span class="line">        // 小于零，认为超过最大锁计数</span><br><span class="line">        if (nextc &lt; 0)</span><br><span class="line">            throw new Error(&quot;Maximum lock count exceeded&quot;);</span><br><span class="line">        // 设置同步信号量</span><br><span class="line">        setState(nextc);</span><br><span class="line">        return true;</span><br><span class="line">    &#125;</span><br><span class="line">    return false;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>解释即注释，读者自行理解吧。</p>
+<p>再来看看<code>acquire</code>方法中的<code>addWaiter</code>方法，enq方法也顺便看了吧。</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">private Node addWaiter(Node mode) &#123;</span><br><span class="line">    // 创建等待队列节点，线程节点为当前线程，模式为传入对象，独占or共享</span><br><span class="line">    Node node = new Node(Thread.currentThread(), mode);</span><br><span class="line">    // Try the fast path of enq; backup to full enq on failure</span><br><span class="line">    Node pred = tail;</span><br><span class="line">    if (pred != null) &#123;</span><br><span class="line">        node.prev = pred;</span><br><span class="line">        if (compareAndSetTail(pred, node)) &#123;</span><br><span class="line">            pred.next = node;</span><br><span class="line">            return node;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    enq(node);</span><br><span class="line">    return node;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">private Node enq(final Node node) &#123;</span><br><span class="line">    for (;;) &#123;</span><br><span class="line">        Node t = tail;</span><br><span class="line">        if (t == null) &#123; // Must initialize</span><br><span class="line">            if (compareAndSetHead(new Node()))</span><br><span class="line">                tail = head;</span><br><span class="line">        &#125; else &#123;</span><br><span class="line">            node.prev = t;</span><br><span class="line">            if (compareAndSetTail(t, node)) &#123;</span><br><span class="line">                t.next = node;</span><br><span class="line">                return t;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>可以看到，<code>enq(Node)</code>方法将并发添加节点的请求通过CAS自旋变得‘串性化’了，以保证节点正确地成为尾节点。</p>
+</blockquote>
+<p>再看看<code>acquireQueued()</code>方法的实现</p>
+<figure class="highlight plain"><table><tr><td class="code"><pre><span class="line">final boolean acquireQueued(final Node node, int arg) &#123;</span><br><span class="line">    boolean failed = true;</span><br><span class="line">    try &#123;</span><br><span class="line">        boolean interrupted = false;</span><br><span class="line">        for (;;) &#123;</span><br><span class="line">            final Node p = node.predecessor();</span><br><span class="line">            if (p == head &amp;&amp; tryAcquire(arg)) &#123;</span><br><span class="line">                setHead(node);</span><br><span class="line">                p.next = null; // help GC</span><br><span class="line">                failed = false;</span><br><span class="line">                return interrupted;</span><br><span class="line">            &#125;</span><br><span class="line">            if (shouldParkAfterFailedAcquire(p, node) &amp;&amp;</span><br><span class="line">                parkAndCheckInterrupt())</span><br><span class="line">                interrupted = true;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; finally &#123;</span><br><span class="line">        if (failed)</span><br><span class="line">            cancelAcquire(node);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>节点进入到同步队列之后，就进入了一个自旋的过程，每个节点都在自省地观察，当条件满足，获取到了同步状态，就可以从这个自旋过程退出；否则，一直会处于这个自旋过程中，并阻塞节点的线程。</p>
+</blockquote>
+]]></content>
+      <categories>
+        <category>JAVA</category>
+      </categories>
+      <tags>
+        <tag>锁</tag>
+        <tag>队列</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>分布式事务详解</title>
+    <url>/2019/11/21/1.%20%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1%E8%AF%A6%E8%A7%A3/</url>
+    <content><![CDATA[<h1 id="分布式事务详解"><a href="#分布式事务详解" class="headerlink" title="分布式事务详解"></a>分布式事务详解</h1><h2 id="一、两个基础理论"><a href="#一、两个基础理论" class="headerlink" title="一、两个基础理论"></a>一、两个基础理论</h2><h3 id="1-CAP理论"><a href="#1-CAP理论" class="headerlink" title="1. CAP理论"></a>1. CAP理论</h3><ul>
+<li><p>CAP：</p>
+<blockquote>
+<ul>
+<li>Consistency(一致性)</li>
+<li>Available（可用性）</li>
+<li>Partition tolerance（分区容错性）</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<h3 id="2-BASE理论"><a href="#2-BASE理论" class="headerlink" title="2.BASE理论"></a>2.BASE理论</h3><ul>
+<li><p>BASE：</p>
+<blockquote>
+<ul>
+<li>Basically Available(基本可用)</li>
+<li>Soft state(软状态)</li>
+<li>Eventually consistent (最终一致性)</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<a id="more"></a>
+<h2 id="二、几种分布式事务"><a href="#二、几种分布式事务" class="headerlink" title="二、几种分布式事务"></a>二、几种分布式事务</h2><h3 id="1-XA-方案"><a href="#1-XA-方案" class="headerlink" title="1. XA 方案"></a>1. XA 方案</h3><p>​    XA 是 X/Open CAE Specification (Distributed Transaction Processing)模型，它定义的 TM（Transaction Manager）与 RM（Resource Manager）之间进行通信的接口。</p>
+<p>​    具体依赖于数据库厂商对jdbc-driver的实现。</p>
+<p>​    在 XA 规范中，数据库充当 RM 角色，应用需要充当 TM 的角色，即生成全局的 txId ，调用 XAResource 接口，把多个本地事务协调为全局统一的分布式事务。</p>
+<ul>
+<li><h4 id="一阶段提交（1PC）"><a href="#一阶段提交（1PC）" class="headerlink" title="一阶段提交（1PC）"></a>一阶段提交（1PC）</h4><p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/1PC.png" alt="1PC"></p>
+<p>1PC也叫弱XA。如上图，</p>
+<ul>
+<li>这种方式去掉了XA中的prepare阶段，来减少资源锁定范围，从而提升并发能力。</li>
+<li>弱 XA 相对性能损耗比较低，但在事务提交的执行过程中，若出现网络故障、数据库宕机等预期之外的异常，将会造成数据不一致，且无法进行回滚。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<ul>
+<li><h4 id="二阶段提交（2PC）"><a href="#二阶段提交（2PC）" class="headerlink" title="二阶段提交（2PC）"></a>二阶段提交（2PC）</h4><p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/2PC.png" alt="2PC"></p>
+<p>2PC也叫强XA，是XA的标准实现。分为两个阶段，如上图。</p>
+<ul>
+<li>第一个阶段：Prepare。TM要求每个涉及到事务的数据库预提交(precommit)此操作，并反映是否可以提交。</li>
+<li>第二阶段：TM要求每个数据库提交数据，或者回滚数据。</li>
+</ul>
+<p>开启XA事务之后，所有子事务会按照本地默认的隔离级别锁定资源。这时会记录数据库的undo和redo log。</p>
+<ul>
+<li><p>当所有子事务反馈的结果为 “yes” 时，TM 再发起 commit 。</p>
+</li>
+<li><p>若其中任何一个子事务反馈的结果为“no”，TM 则发起 rollback 。</p>
+</li>
+<li><p>如果在prepare阶段反馈“yes”，但是在commit阶段数据库宕机，可根据XA recover再次进行commit进行补偿，保证数据一致性。</p>
+</li>
+</ul>
+<p>优点：</p>
+<blockquote>
+<ul>
+<li>尽量保证了数据的强一致性，各个主流数据库都提供了相应的实现，实现成本相对低一些</li>
+</ul>
+</blockquote>
+<p>缺点：</p>
+<blockquote>
+<ul>
+<li>同步阻塞问题</li>
+<li>单点故障</li>
+<li>数据不一致</li>
+</ul>
+</blockquote>
+</li>
+</ul>
+<h3 id="2-TCC-方案"><a href="#2-TCC-方案" class="headerlink" title="2. TCC 方案"></a>2. TCC 方案</h3><p>TCC也算是一种2PC的方案，只不过实现过程放在了应用层。先来看看执行过程。</p>
+<p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/TCC.png" alt="image"></p>
+<ul>
+<li><p>Try</p>
+<ul>
+<li>尝试执行业务</li>
+<li>完成所有业务校验</li>
+<li>预留业务资源</li>
+</ul>
+</li>
+<li><p>Confirm </p>
+<ul>
+<li>确认执行业务；</li>
+<li>真正执行业务，不作任何业务检查</li>
+<li>只使用Try阶段预留的业务资源</li>
+<li>Confirm 操作满足幂等性</li>
+</ul>
+</li>
+<li><p>Cancel</p>
+<ul>
+<li>取消执行业务</li>
+<li>释放Try阶段预留的业务资源</li>
+<li>Cancel操作满足幂等性</li>
+</ul>
+</li>
+</ul>
+<p>举个栗子：拿一个<strong>用户提现</strong>的操作来讲</p>
+<blockquote>
+<ul>
+<li>Try阶段： <ol>
+<li>校验用户信息（账户状态），余额信息是否足够等</li>
+<li>扣减本地用户余额，这时候余额信息处于冻结状态（表示这部分余额信息被这笔提现操作占用，由于最后结果未知，不能完全扣减掉）</li>
+<li>调用银行服务，从用户账户转到提现账户。这也是一个跨库事务。</li>
+</ol>
+</li>
+<li>Confirm阶段：<ol>
+<li>核心系统返回了成功，那这时候需要把冻结部分的余额扣减掉。</li>
+<li>修改本地流水信息为成功</li>
+<li>修改本地明细信息为成功</li>
+</ol>
+</li>
+<li>Cancel阶段：<ol>
+<li>核心系统返回了失败，这时候需要冻结部分的余额回滚，重新加回原账户。</li>
+<li>修改本地流水信息为失败</li>
+<li>修改本地明细信息为失败</li>
+</ol>
+</li>
+</ul>
+</blockquote>
+<p> 当然这个只是一个简单的业务流程，里面核心系统不一定只会返回成功失败，还有一场情况，超时，返回处理中，等等。当考虑这部分的时候，还需要考虑业务的幂等性，像超时情况，调用方不知道实际的业务结果，可能会发起重试，不能让账户重复扣钱。</p>
+<p>再来一张来自网络的图</p>
+<p><img src="https://walepic.oss-cn-hangzhou.aliyuncs.com/%E5%88%86%E5%B8%83%E5%BC%8F%E4%BA%8B%E5%8A%A1/TCC%20from%20Internet.png" alt="image"></p>
+<p>所以总的来讲，TCC的优点</p>
+<ul>
+<li>可以保证事务的最终一致性。</li>
+<li>无需在发起阶段挂起事务，提高吞吐量。</li>
+</ul>
+<p>缺点也很明显：</p>
+<ul>
+<li>需要考虑的异常情况更多，保证业务幂等</li>
+<li>业务回滚的逻辑也要编写，开发工作量增加</li>
+</ul>
+<hr>
+<h3 id="3-基于消息实现的分布式事务"><a href="#3-基于消息实现的分布式事务" class="headerlink" title="3. 基于消息实现的分布式事务"></a>3. 基于消息实现的分布式事务</h3><p>这种方式实现起来是比较简单的，比较适合下游事务比较简单，不需要回滚的场景。比如：</p>
+<ul>
+<li>某笔订单成功后，为用户增加积分。不考虑退款情况，这种情况需要保证积分最终成功增加，不能多加也不能漏加，需要支持交易幂等。</li>
+</ul>
+<p>可以看到该事务形态过程简单，性能消耗小，发起方与跟随方之间的流量峰谷可以使用队列填平。</p>
+<hr>
+<h3 id="4-基于补偿实现的分布式事务"><a href="#4-基于补偿实现的分布式事务" class="headerlink" title="4. 基于补偿实现的分布式事务"></a>4. 基于补偿实现的分布式事务</h3><p>像3中事务形体并不适合所有场景，当服务异常需要回滚的时候，消息实现的方案就可能不是很适用了。<br>比如这种情况，<strong>某笔订单完成时，同时扣掉用户的现金</strong>。<br>涉及到资金的交易格外需要注意，比如我们的业务场景是这样的：</p>
+<ol>
+<li>创建订单数据，但暂不提交本地事务</li>
+<li>订单服务发送远程调用到现金服务，以扣除对应的金额</li>
+<li>上述步骤成功后提交订单库的事务</li>
+</ol>
+<p>在2-3部中间发生异常，程序需要回滚，2步骤已经提交，这咋办呢？需要一个额外的服务，来把之前扣掉的金额加回去。这个过程，就是补偿。</p>
+<p>那补偿有什么问题呢？可以想到，上面的现金服务不仅需要一个扣减服务，还要增加额外的回滚动作，开发工作量更多一些。相对消息的情况，也失去了削峰填谷的能力。</p>
+<p>也可以看到，无论消息还是补偿，实时性不是特别强，用户可能可以在订单未完成的情况下，看到不一致的视图。如，订单还未成功，钱先扣掉了。或者，订单完成了，积分还没加上。</p>
+<p>当然用哪种方案，还得看业务决定。</p>
+<h3 id="5-SAGA"><a href="#5-SAGA" class="headerlink" title="5. SAGA"></a>5. SAGA</h3><p>暂时没有很好的总结，可以参考<a href="https://www.jdon.com/49338" target="_blank" rel="noopener">：分布式事务Saga模式</a></p>
+]]></content>
+      <categories>
+        <category>分布式</category>
+      </categories>
+      <tags>
+        <tag>事务</tag>
+      </tags>
+  </entry>
+</search>
